@@ -4,6 +4,7 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 import config
+from bubble import TriggerBubble
 from hotkey import HotkeyBridge
 from popup import PopupWindow
 from tray import TrayIcon
@@ -25,9 +26,21 @@ def main():
     tray.show()
 
     popup = PopupWindow()
+    bubble = TriggerBubble()
+
+    def on_selection(x, y, text):
+        if popup.isVisible():
+            return
+        bubble.show_at(x, y, text)
+
+    def on_bubble_click(text):
+        popup.show_for_text(text)
 
     bridge = HotkeyBridge()
     bridge.triggered.connect(popup.show_for_text)
+    bridge.selection_detected.connect(on_selection)
+    bridge.selection_cleared.connect(bubble.dismiss)
+    bubble.clicked.connect(on_bubble_click)
     bridge.start()
 
     code = app.exec()
