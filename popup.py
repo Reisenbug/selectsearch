@@ -138,7 +138,6 @@ class PopupWindow(QFrame):
             if self._cancel:
                 log.debug("stream cancelled")
                 return
-            log.debug("chunk: %r", chunk[:50] if len(chunk) > 50 else chunk)
             self._append_signal.emit(chunk)
         self._done_signal.emit()
         log.debug("stream done")
