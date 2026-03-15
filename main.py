@@ -1,13 +1,23 @@
+import logging
 import sys
 
 from PyQt6.QtWidgets import QApplication
 
+import config
 from hotkey import HotkeyBridge
 from popup import PopupWindow
 from tray import TrayIcon
 
 
 def main():
+    cfg = config.load()
+    level = logging.DEBUG if cfg.get("debug") else logging.WARNING
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 

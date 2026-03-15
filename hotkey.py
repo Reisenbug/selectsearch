@@ -1,9 +1,12 @@
+import logging
 import threading
 
 from pynput import keyboard
 from PyQt6.QtCore import QObject, pyqtSignal
 
 import clipboard
+
+log = logging.getLogger(__name__)
 
 
 class HotkeyBridge(QObject):
@@ -30,10 +33,12 @@ class HotkeyBridge(QObject):
         self._listener.start()
 
     def _on_activate(self):
+        log.debug("hotkey activated")
         threading.Thread(target=self._grab_and_emit, daemon=True).start()
 
     def _grab_and_emit(self):
         text = clipboard.grab_selection()
+        log.debug("grabbed text: %r", text[:80] if text else None)
         if text:
             self.triggered.emit(text)
 

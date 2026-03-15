@@ -1,8 +1,12 @@
+import logging
+
 from PyQt6.QtGui import QAction, QIcon, QPixmap, QPainter, QColor, QFont
-from PyQt6.QtWidgets import QMenu, QSystemTrayIcon, QDialog, QFormLayout, QLineEdit, QSpinBox, QPushButton, QHBoxLayout
+from PyQt6.QtWidgets import QMenu, QSystemTrayIcon, QDialog, QFormLayout, QLineEdit, QSpinBox, QCheckBox, QPushButton, QHBoxLayout
 
 import config
 from styles import SETTINGS_QSS
+
+log = logging.getLogger(__name__)
 
 
 def _make_icon() -> QIcon:
@@ -42,6 +46,11 @@ class SettingsDialog(QDialog):
         self._max_tokens.setValue(cfg["max_tokens"])
         layout.addRow("Max Tokens:", self._max_tokens)
 
+        self._debug = QCheckBox("Enable debug logging")
+        self._debug.setChecked(cfg.get("debug", False))
+        self._debug.setStyleSheet("QCheckBox { color: #cdd6f4; }")
+        layout.addRow(self._debug)
+
         btn_row = QHBoxLayout()
         save_btn = QPushButton("Save")
         save_btn.clicked.connect(self._save)
@@ -55,7 +64,10 @@ class SettingsDialog(QDialog):
         cfg["api_key"] = self._api_key.text().strip()
         cfg["model"] = self._model.text().strip()
         cfg["max_tokens"] = self._max_tokens.value()
+        cfg["debug"] = self._debug.isChecked()
         config.save(cfg)
+        root = logging.getLogger()
+        root.setLevel(logging.DEBUG if cfg["debug"] else logging.WARNING)
         self.accept()
 
 

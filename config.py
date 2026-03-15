@@ -10,6 +10,7 @@ DEFAULTS = {
     "model": "gpt-4o",
     "hotkey": "cmd+shift+e",
     "max_tokens": 1024,
+    "debug": False,
 }
 
 

@@ -1,7 +1,8 @@
+import logging
 import threading
 
 import markdown
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QCursor, QGuiApplication
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QPushButton, QTextBrowser, QVBoxLayout,
@@ -10,7 +11,11 @@ from PyQt6.QtWidgets import (
 import ai_client
 from styles import POPUP_QSS, BODY_CSS
 
-POPUP_W, POPUP_H = 480, 360
+log = logging.getLogger(__name__)
+
+POPUP_W = 480
+EXPANDED_H = 360
+COLLAPSED_H = 36
 
 
 class PopupWindow(QFrame):
@@ -26,13 +31,14 @@ class PopupWindow(QFrame):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.setFixedSize(POPUP_W, POPUP_H)
         self.setStyleSheet(POPUP_QSS)
 
         self._md_buffer = ""
         self._pending = ""
-        self._auto_scroll = True
+        self._user_scrolled = False
+        self._expanded = True
         self._stream_thread = None
+        self._streaming = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -44,6 +50,13 @@ class PopupWindow(QFrame):
         self._title.setObjectName("title")
         header.addWidget(self._title)
         header.addStretch()
+
+        self._toggle_btn = QPushButton("▼")
+        self._toggle_btn.setObjectName("close")
+        self._toggle_btn.setFixedSize(28, 28)
+        self._toggle_btn.clicked.connect(self._toggle_expand)
+        header.addWidget(self._toggle_btn)
+
         close_btn = QPushButton("✕")
         close_btn.setObjectName("close")
         close_btn.setFixedSize(28, 28)
@@ -61,13 +74,34 @@ class PopupWindow(QFrame):
 
         self._append_signal.connect(self._on_chunk)
         self._done_signal.connect(self._on_done)
-        self._browser.document().contentsChanged.connect(self._on_content_changed)
+
+        self._browser.verticalScrollBar().valueChanged.connect(self._on_user_scroll)
 
         self._drag_pos = None
+        self._apply_size()
+
+    def _apply_size(self):
+        if self._expanded:
+            self.setFixedSize(POPUP_W, EXPANDED_H)
+            self._browser.show()
+            self._toggle_btn.setText("▲")
+        else:
+            self.setFixedSize(POPUP_W, COLLAPSED_H)
+            self._browser.hide()
+            self._toggle_btn.setText("▼")
+
+    def _toggle_expand(self):
+        self._expanded = not self._expanded
+        self._apply_size()
 
     def show_for_text(self, text: str):
+        log.debug("show_for_text: %r", text[:80])
         self._md_buffer = ""
         self._pending = ""
+        self._user_scrolled = False
+        self._streaming = True
+        self._expanded = True
+        self._apply_size()
         self._title.setText(text[:60] + ("..." if len(text) > 60 else ""))
         self._browser.setHtml(self._wrap_html("<p style='color:#6c7086'>Loading...</p>"))
         self._position_near_cursor()
@@ -87,16 +121,19 @@ class PopupWindow(QFrame):
         y = pos.y() + 16
         if x + POPUP_W > geo.right():
             x = pos.x() - POPUP_W - 16
-        if y + POPUP_H > geo.bottom():
-            y = pos.y() - POPUP_H - 16
+        if y + EXPANDED_H > geo.bottom():
+            y = pos.y() - EXPANDED_H - 16
         x = max(x, geo.left())
         y = max(y, geo.top())
         self.move(x, y)
 
     def _run_stream(self, text: str):
+        log.debug("stream started")
         for chunk in ai_client.stream_explain(text):
+            log.debug("chunk: %r", chunk[:50] if len(chunk) > 50 else chunk)
             self._append_signal.emit(chunk)
         self._done_signal.emit()
+        log.debug("stream done")
 
     def _on_chunk(self, chunk: str):
         self._pending += chunk
@@ -109,20 +146,26 @@ class PopupWindow(QFrame):
         self._render()
 
     def _on_done(self):
+        self._streaming = False
         self._flush()
         self._timer.stop()
+
+    def _on_user_scroll(self):
+        if not self._streaming:
+            return
+        sb = self._browser.verticalScrollBar()
+        if sb.value() < sb.maximum() - 30:
+            self._user_scrolled = True
 
     def _render(self):
         html = markdown.markdown(
             self._md_buffer,
             extensions=["fenced_code", "tables", "nl2br"],
         )
-        sb = self._browser.verticalScrollBar()
-        self._auto_scroll = sb.value() >= sb.maximum() - 20
+        self._browser.blockSignals(True)
         self._browser.setHtml(self._wrap_html(html))
-
-    def _on_content_changed(self):
-        if self._auto_scroll:
+        self._browser.blockSignals(False)
+        if not self._user_scrolled:
             sb = self._browser.verticalScrollBar()
             sb.setValue(sb.maximum())
 
