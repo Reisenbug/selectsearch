@@ -1,12 +1,17 @@
 import logging
 import threading
+import time
 
-from pynput import keyboard, mouse
+import Quartz
 from PyQt6.QtCore import QObject, pyqtSignal
 
 import clipboard
 
 log = logging.getLogger(__name__)
+
+# CGEventFlags
+kCGEventFlagMaskCommand = 1 << 20
+kCGEventFlagMaskShift = 1 << 17
 
 
 class HotkeyBridge(QObject):
@@ -16,65 +21,75 @@ class HotkeyBridge(QObject):
 
     def __init__(self):
         super().__init__()
-        self._kb_listener = None
-        self._mouse_listener = None
-        self._pressing = False
+        self._thread = None
+        self._running = False
+        self._mouse_down = False
 
     def start(self):
-        hotkey = keyboard.HotKey(
-            keyboard.HotKey.parse("<cmd>+<shift>+e"),
-            self._on_hotkey,
+        self._running = True
+        self._thread = threading.Thread(target=self._run_tap, daemon=True)
+        self._thread.start()
+
+    def _run_tap(self):
+        mask = (
+            (1 << Quartz.kCGEventKeyDown)
+            | (1 << Quartz.kCGEventLeftMouseDown)
+            | (1 << Quartz.kCGEventLeftMouseUp)
         )
-
-        def on_press(key):
-            hotkey.press(self._kb_listener.canonical(key))
-
-        def on_release(key):
-            hotkey.release(self._kb_listener.canonical(key))
-
-        self._kb_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
-        self._kb_listener.daemon = True
-        self._kb_listener.start()
-
-        self._mouse_listener = mouse.Listener(
-            on_click=self._on_click,
+        tap = Quartz.CGEventTapCreate(
+            Quartz.kCGSessionEventTap,
+            Quartz.kCGHeadInsertEventTap,
+            Quartz.kCGEventTapOptionListenOnly,
+            mask,
+            self._callback,
+            None,
         )
-        self._mouse_listener.daemon = True
-        self._mouse_listener.start()
+        if not tap:
+            log.error("Failed to create event tap. Grant Accessibility permission.")
+            return
 
-    def _on_hotkey(self):
-        log.debug("hotkey activated")
-        threading.Thread(target=self._grab_and_emit, daemon=True).start()
+        source = Quartz.CFMachPortCreateRunLoopSource(None, tap, 0)
+        loop = Quartz.CFRunLoopGetCurrent()
+        Quartz.CFRunLoopAddSource(loop, source, Quartz.kCFRunLoopDefaultMode)
+        Quartz.CGEventTapEnable(tap, True)
+        log.debug("event tap started")
+        Quartz.CFRunLoopRun()
+
+    def _callback(self, proxy, event_type, event, refcon):
+        if event_type == Quartz.kCGEventKeyDown:
+            flags = Quartz.CGEventGetFlags(event)
+            keycode = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
+            # keycode 14 = 'e'
+            if keycode == 14 and (flags & kCGEventFlagMaskCommand) and (flags & kCGEventFlagMaskShift):
+                log.debug("hotkey Cmd+Shift+E detected")
+                threading.Thread(target=self._grab_and_emit, daemon=True).start()
+
+        elif event_type == Quartz.kCGEventLeftMouseDown:
+            self._mouse_down = True
+
+        elif event_type == Quartz.kCGEventLeftMouseUp:
+            if self._mouse_down:
+                self._mouse_down = False
+                loc = Quartz.CGEventGetLocation(event)
+                x, y = int(loc.x), int(loc.y)
+                threading.Thread(target=self._check_selection, args=(x, y), daemon=True).start()
+
+        return event
 
     def _grab_and_emit(self):
         text = clipboard.grab_selection()
-        log.debug("grabbed text: %r", text[:80] if text else None)
+        log.debug("hotkey grabbed: %r", text[:80] if text else None)
         if text:
             self.triggered.emit(text)
 
-    def _on_click(self, x, y, button, pressed):
-        if button == mouse.Button.left:
-            if pressed:
-                self._pressing = True
-            else:
-                if self._pressing:
-                    self._pressing = False
-                    threading.Thread(
-                        target=self._check_selection, args=(x, y), daemon=True
-                    ).start()
-
     def _check_selection(self, x, y):
-        import time
         time.sleep(0.05)
         text = clipboard.grab_selection()
         if text:
-            log.debug("selection detected at (%d, %d): %r", x, y, text[:40])
+            log.debug("selection at (%d, %d): %r", x, y, text[:40])
             self.selection_detected.emit(x, y, text)
         else:
             self.selection_cleared.emit()
 
     def stop(self):
-        if self._kb_listener:
-            self._kb_listener.stop()
-        if self._mouse_listener:
-            self._mouse_listener.stop()
+        self._running = False
