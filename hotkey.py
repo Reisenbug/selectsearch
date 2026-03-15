@@ -24,6 +24,7 @@ class HotkeyBridge(QObject):
         self._thread = None
         self._running = False
         self._mouse_down = False
+        self._sel_seq = 0
 
     def start(self):
         self._running = True
@@ -70,9 +71,11 @@ class HotkeyBridge(QObject):
         elif event_type == Quartz.kCGEventLeftMouseUp:
             if self._mouse_down:
                 self._mouse_down = False
+                self._sel_seq += 1
+                seq = self._sel_seq
                 loc = Quartz.CGEventGetLocation(event)
                 x, y = int(loc.x), int(loc.y)
-                threading.Thread(target=self._check_selection, args=(x, y), daemon=True).start()
+                threading.Thread(target=self._check_selection, args=(x, y, seq), daemon=True).start()
 
         return event
 
@@ -82,8 +85,10 @@ class HotkeyBridge(QObject):
         if text:
             self.triggered.emit(text)
 
-    def _check_selection(self, x, y):
-        time.sleep(0.05)
+    def _check_selection(self, x, y, seq):
+        time.sleep(0.15)
+        if seq != self._sel_seq:
+            return
         text = clipboard.grab_selection()
         if text:
             log.debug("selection at (%d, %d): %r", x, y, text[:40])
