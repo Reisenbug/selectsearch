@@ -31,6 +31,7 @@ class PopupWindow(QFrame):
 
         self._md_buffer = ""
         self._pending = ""
+        self._auto_scroll = True
         self._stream_thread = None
 
         layout = QVBoxLayout(self)
@@ -60,6 +61,7 @@ class PopupWindow(QFrame):
 
         self._append_signal.connect(self._on_chunk)
         self._done_signal.connect(self._on_done)
+        self._browser.document().contentsChanged.connect(self._on_content_changed)
 
         self._drag_pos = None
 
@@ -116,9 +118,12 @@ class PopupWindow(QFrame):
             extensions=["fenced_code", "tables", "nl2br"],
         )
         sb = self._browser.verticalScrollBar()
-        at_bottom = sb.value() >= sb.maximum() - 20
+        self._auto_scroll = sb.value() >= sb.maximum() - 20
         self._browser.setHtml(self._wrap_html(html))
-        if at_bottom:
+
+    def _on_content_changed(self):
+        if self._auto_scroll:
+            sb = self._browser.verticalScrollBar()
             sb.setValue(sb.maximum())
 
     def _wrap_html(self, body: str) -> str:
