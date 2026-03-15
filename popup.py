@@ -40,6 +40,7 @@ class PopupWindow(QFrame):
         self._expanded = True
         self._stream_thread = None
         self._streaming = False
+        self._cancel = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -97,10 +98,12 @@ class PopupWindow(QFrame):
 
     def show_for_text(self, text: str):
         log.debug("show_for_text: %r", text[:80])
+        self._cancel = True
         self._md_buffer = ""
         self._pending = ""
         self._user_scrolled = False
         self._programmatic_scroll = False
+        self._cancel = False
         self._streaming = True
         self._expanded = True
         self._apply_size()
@@ -132,6 +135,9 @@ class PopupWindow(QFrame):
     def _run_stream(self, text: str):
         log.debug("stream started")
         for chunk in ai_client.stream_explain(text):
+            if self._cancel:
+                log.debug("stream cancelled")
+                return
             log.debug("chunk: %r", chunk[:50] if len(chunk) > 50 else chunk)
             self._append_signal.emit(chunk)
         self._done_signal.emit()
@@ -185,6 +191,12 @@ class PopupWindow(QFrame):
 
     def mouseReleaseEvent(self, event):
         self._drag_pos = None
+
+    def hideEvent(self, event):
+        self._cancel = True
+        self._streaming = False
+        self._timer.stop()
+        super().hideEvent(event)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
