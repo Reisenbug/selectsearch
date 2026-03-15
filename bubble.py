@@ -1,8 +1,14 @@
 import logging
+import sys
+from ctypes import c_void_p
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QGuiApplication, QFont, QColor, QPainter, QPainterPath
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton
+
+if sys.platform == "darwin":
+    import objc
+    from AppKit import NSFloatingWindowLevel
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +54,7 @@ class TriggerBubble(QWidget):
                     stop:0 #eba0ac, stop:1 #f9e2af);
             }
         """)
+        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         btn.clicked.connect(self._on_click)
         layout.addWidget(btn)
 
@@ -55,6 +62,21 @@ class TriggerBubble(QWidget):
         self._hide_timer.setSingleShot(True)
         self._hide_timer.setInterval(5000)
         self._hide_timer.timeout.connect(self.hide)
+
+    def _setup_ns_window(self):
+        if sys.platform != "darwin":
+            return
+        view = objc.objc_object(c_void_p=int(self.winId()))
+        ns_window = view.window()
+        ns_window.setLevel_(NSFloatingWindowLevel)
+        NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0
+        NSWindowCollectionBehaviorIgnoresCycle = 1 << 6
+        ns_window.setCollectionBehavior_(
+            NSWindowCollectionBehaviorCanJoinAllSpaces
+            | NSWindowCollectionBehaviorIgnoresCycle
+        )
+        ns_window.setHidesOnDeactivate_(False)
+        self._ns_window = ns_window
 
     def show_at(self, x: int, y: int, text: str):
         self._text = text
@@ -74,7 +96,15 @@ class TriggerBubble(QWidget):
         log.debug("bubble show at (%d, %d)", px, py)
         self.move(px, py)
         self.show()
-        self.raise_()
+
+        if not hasattr(self, "_ns_window"):
+            self._setup_ns_window()
+
+        if sys.platform == "darwin":
+            self._ns_window.orderFrontRegardless()
+        else:
+            self.raise_()
+
         self._hide_timer.start()
 
     def _on_click(self):
