@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-CONFIG_DIR = Path.home() / ".config" / "selectsearch"
+CONFIG_DIR = Path(__file__).parent
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULTS = {
@@ -26,6 +26,5 @@ def load() -> dict:
 
 
 def save(cfg: dict):
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
