@@ -86,7 +86,7 @@ class HotkeyBridge(QObject):
             self.triggered.emit(text)
 
     def _check_selection(self, x, y, seq):
-        time.sleep(0.15)
+        time.sleep(0.25)
         if seq != self._sel_seq:
             return
         text = clipboard.grab_selection()
