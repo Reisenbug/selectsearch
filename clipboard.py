@@ -1,25 +1,18 @@
-import subprocess
-import time
-
-
-def get() -> str:
-    r = subprocess.run(["pbpaste"], capture_output=True, text=True)
-    return r.stdout
-
-
-def set_(text: str):
-    subprocess.run(["pbcopy"], input=text, text=True)
+import Quartz
+from ApplicationServices import (
+    AXUIElementCreateSystemWide,
+    AXUIElementCopyAttributeValue,
+)
+from ApplicationServices import kAXFocusedUIElementAttribute  # type: ignore
 
 
 def grab_selection() -> str | None:
-    old = get()
-    subprocess.run(
-        ["osascript", "-e",
-         'tell application "System Events" to keystroke "c" using command down'],
-    )
-    time.sleep(0.15)
-    new = get()
-    set_(old)
-    if new and new != old:
-        return new.strip()
-    return new.strip() if new else None
+    system = AXUIElementCreateSystemWide()
+    err, focused = AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute, None)
+    if err or not focused:
+        return None
+    err, text = AXUIElementCopyAttributeValue(focused, "AXSelectedText", None)
+    if err or not text:
+        return None
+    result = str(text).strip()
+    return result if result else None
