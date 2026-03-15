@@ -36,6 +36,7 @@ class PopupWindow(QFrame):
         self._md_buffer = ""
         self._pending = ""
         self._user_scrolled = False
+        self._programmatic_scroll = False
         self._expanded = True
         self._stream_thread = None
         self._streaming = False
@@ -75,7 +76,7 @@ class PopupWindow(QFrame):
         self._append_signal.connect(self._on_chunk)
         self._done_signal.connect(self._on_done)
 
-        self._browser.verticalScrollBar().valueChanged.connect(self._on_user_scroll)
+        self._browser.verticalScrollBar().valueChanged.connect(self._on_scroll_changed)
 
         self._drag_pos = None
         self._apply_size()
@@ -99,6 +100,7 @@ class PopupWindow(QFrame):
         self._md_buffer = ""
         self._pending = ""
         self._user_scrolled = False
+        self._programmatic_scroll = False
         self._streaming = True
         self._expanded = True
         self._apply_size()
@@ -150,24 +152,25 @@ class PopupWindow(QFrame):
         self._flush()
         self._timer.stop()
 
-    def _on_user_scroll(self):
+    def _on_scroll_changed(self):
         if not self._streaming:
             return
-        sb = self._browser.verticalScrollBar()
-        if sb.value() < sb.maximum() - 30:
-            self._user_scrolled = True
+        if self._programmatic_scroll:
+            return
+        self._user_scrolled = True
+        log.debug("user scrolled, auto-scroll disabled")
 
     def _render(self):
         html = markdown.markdown(
             self._md_buffer,
             extensions=["fenced_code", "tables", "nl2br"],
         )
-        self._browser.blockSignals(True)
+        self._programmatic_scroll = True
         self._browser.setHtml(self._wrap_html(html))
-        self._browser.blockSignals(False)
         if not self._user_scrolled:
             sb = self._browser.verticalScrollBar()
             sb.setValue(sb.maximum())
+        self._programmatic_scroll = False
 
     def _wrap_html(self, body: str) -> str:
         return f"<html><head><style>{BODY_CSS}</style></head><body>{body}</body></html>"
